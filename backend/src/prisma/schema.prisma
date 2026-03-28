@@ -1,0 +1,307 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  plan      TenantPlan @default(FREE)
+  settings  Json     @default("{}")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  cases           Case[]
+  clients         Client[]
+  documents       Document[]
+  embeddings      DocumentEmbedding[]
+  invoices        Invoice[]
+  aiSessions      AiSession[]
+
+  @@index([slug])
+}
+
+enum TenantPlan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+model User {
+  id            String    @id @default(uuid())
+  tenantId      String
+  email         String
+  password      String
+  name          String
+  role          UserRole  @default(LAWYER)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cases         Case[]    @relation("CaseLawyer")
+  timeEntries   TimeEntry[]
+  createdClients Client[] @relation("ClientCreator")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([email])
+}
+
+enum UserRole {
+  ADMIN
+  LAWYER
+  PARALEGAL
+  SECRETARY
+  CLIENT
+}
+
+model Client {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  email     String?
+  phone     String?
+  company   String?
+  address   String?
+  notes     String?
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creator   User     @relation("ClientCreator", fields: [createdBy], references: [id])
+  cases     Case[]
+  invoices  Invoice[]
+
+  @@index([tenantId])
+}
+
+model Case {
+  id          String      @id @default(uuid())
+  tenantId    String
+  caseNumber  String
+  title       String
+  status      CaseStatus  @default(ACTIVE)
+  type        CaseType
+  clientId    String
+  lawyerId    String
+  courtDate   DateTime?
+  courtName   String?
+  description String?
+  aiSummary   String?
+  closedAt    DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client      Client      @relation(fields: [clientId], references: [id])
+  lawyer      User        @relation("CaseLawyer", fields: [lawyerId], references: [id])
+  events      CaseEvent[]
+  documents   Document[]
+  timeEntries TimeEntry[]
+
+  @@unique([tenantId, caseNumber])
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([lawyerId])
+  @@index([status])
+}
+
+enum CaseStatus {
+  ACTIVE
+  PENDING
+  CLOSED
+  ARCHIVED
+}
+
+enum CaseType {
+  CIVIL
+  CRIMINAL
+  COMMERCIAL
+  FAMILY
+  LABOR
+  ADMINISTRATIVE
+  REAL_ESTATE
+  INTELLECTUAL_PROPERTY
+  BANKRUPTCY
+  OTHER
+}
+
+model CaseEvent {
+  id        String   @id @default(uuid())
+  caseId    String
+  type      String
+  title     String
+  description String?
+  eventDate DateTime
+  createdAt DateTime @default(now())
+
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([eventDate])
+}
+
+model Document {
+  id           String          @id @default(uuid())
+  tenantId     String
+  caseId       String?
+  name         String
+  originalName String
+  mimeType     String
+  size         Int
+  s3Key        String
+  status       DocumentStatus  @default(PENDING)
+  extractedText String?
+  summary      String?
+  metadata     Json            @default("{}")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case         Case?           @relation(fields: [caseId], references: [id])
+  embeddings   DocumentEmbedding[]
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([status])
+}
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+model DocumentEmbedding {
+  id           String   @id @default(uuid())
+  tenantId     String
+  documentId   String
+  caseId       String?
+  chunkIndex   Int
+  content      String
+  embedding    Float[] @db.Vector(1024)
+  metadata     Json    @default("{}")
+  createdAt    DateTime @default(now())
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([documentId])
+  @@unique([documentId, chunkIndex])
+}
+
+model TimeEntry {
+  id          String    @id @default(uuid())
+  tenantId    String
+  caseId      String
+  userId      String
+  description String
+  hours       Decimal   @db.Decimal(5, 2)
+  hourlyRate  Decimal   @db.Decimal(10, 2)
+  amount      Decimal   @db.Decimal(10, 2)
+  date        DateTime
+  isBilled    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  case        Case      @relation(fields: [caseId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([userId])
+}
+
+model Invoice {
+  id           String        @id @default(uuid())
+  tenantId     String
+  clientId     String
+  invoiceNumber String       @unique
+  status       InvoiceStatus @default(DRAFT)
+  subtotal     Decimal       @db.Decimal(10, 2)
+  tax          Decimal       @db.Decimal(10, 2) @default(0)
+  total        Decimal       @db.Decimal(10, 2)
+  dueDate      DateTime
+  paidAt       DateTime?
+  stripePaymentId String?
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client       Client        @relation(fields: [clientId], references: [id])
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([status])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model AiSession {
+  id         String   @id @default(uuid())
+  tenantId   String
+  userId     String
+  title      String
+  messages   Json     @default("[]")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  data      Json             @default("{}")
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+enum NotificationType {
+  CASE_UPDATE
+  DOCUMENT_UPLOADED
+  COURT_DATE_REMINDER
+  INVOICE_PAID
+  AI_RESPONSE
+  SYSTEM
+}

@@ -1,5 +1,5 @@
 # COLS – Project Architecture
-### architecture.md | Version 1.0
+### architecture.md | Version 2.0
 
 ---
 
@@ -20,7 +20,7 @@
 │         ▼                    ▼                    ▼             │
 │  ┌────────────┐     ┌────────────┐     ┌────────────┐        │
 │  │ PostgreSQL  │     │   Redis    │     │    S3      │        │
-│  │  + pgvector│     │  + BullMQ  │     │  (Files)   │        │
+│  │  + pgvector│     │  + BullMQ  │     │  (MinIO)   │        │
 │  └────────────┘     └────────────┘     └────────────┘        │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
@@ -37,14 +37,52 @@ cols-ai/
 │   ├── architecture.md        # This file
 │   ├── dev-workflow.md        # Git workflow & CI/CD
 │   ├── features-impl.md       # Feature specs
+│   ├── AGENTS.md             # AI agent coding guidelines
 │   └── claude.md              # AI execution guide
 │
-├── backend/                   # NestJS API
-├── frontend/                  # Next.js App
+├── backend/                   # NestJS API (TypeScript)
+│   ├── src/
+│   │   ├── main.ts
+│   │   ├── app.module.ts
+│   │   ├── config/
+│   │   ├── prisma/
+│   │   ├── common/
+│   │   └── modules/
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── nest-cli.json
+│   ├── Dockerfile
+│   └── .env.example
+│
+├── frontend/                  # Next.js App (TypeScript)
+│   ├── src/
+│   │   ├── app/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── lib/
+│   │   ├── stores/
+│   │   └── types/
+│   ├── package.json
+│   ├── tailwind.config.ts
+│   ├── next.config.js
+│   └── Dockerfile
+│
 ├── ai-service/               # Python FastAPI
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── api/
+│   │   ├── agents/
+│   │   ├── core/
+│   │   ├── services/
+│   │   └── models/
+│   ├── tests/
+│   ├── requirements.txt
+│   ├── pyproject.toml
+│   └── Dockerfile
 │
 ├── docker-compose.dev.yml     # Development environment
-├── docker-compose.prod.yml     # Production environment
+├── docker-compose.prod.yml    # Production environment
+├── docker-compose.test.yml    # Testing environment
 └── README.md
 ```
 
@@ -58,275 +96,208 @@ backend/
 │   ├── main.ts                       # Application entry point
 │   ├── app.module.ts                 # Root module
 │   │
-│   ├── common/                       # Shared utilities
-│   │   ├── decorators/               # Custom decorators
-│   │   │   ├── tenant-id.decorator.ts
-│   │   │   ├── current-user.decorator.ts
-│   │   │   └── roles.decorator.ts
-│   │   │
-│   │   ├── guards/                   # Route guards
-│   │   │   ├── auth.guard.ts
-│   │   │   ├── tenant.guard.ts
-│   │   │   ├── roles.guard.ts
-│   │   │   └── throttle.guard.ts
-│   │   │
-│   │   ├── filters/                  # Exception filters
-│   │   │   ├── http-exception.filter.ts
-│   │   │   └── validation.filter.ts
-│   │   │
-│   │   ├── interceptors/             # Request/response interceptors
-│   │   │   ├── logging.interceptor.ts
-│   │   │   └── transform.interceptor.ts
-│   │   │
-│   │   ├── pipes/                    # Validation pipes
-│   │   │   └── validation.pipe.ts
-│   │   │
-│   │   └── utils/                    # Helper functions
-│   │       ├── sanitize.ts
-│   │       └── hash.ts
-│   │
 │   ├── config/                       # Configuration
 │   │   ├── config.module.ts
 │   │   ├── config.service.ts
 │   │   └── configuration.ts
 │   │
-│   ├── modules/                      # Feature modules
-│   │   │
-│   │   ├── auth/                     # Authentication
-│   │   │   ├── auth.module.ts
-│   │   │   ├── auth.controller.ts
-│   │   │   ├── auth.service.ts
-│   │   │   ├── strategies/
-│   │   │   │   └── jwt.strategy.ts
-│   │   │   ├── dto/
-│   │   │   │   ├── login.dto.ts
-│   │   │   │   ├── register.dto.ts
-│   │   │   │   └── refresh-token.dto.ts
-│   │   │   └── entities/
-│   │   │       └── refresh-token.entity.ts
-│   │   │
-│   │   ├── users/                    # User management
-│   │   │   ├── users.module.ts
-│   │   │   ├── users.controller.ts
-│   │   │   ├── users.service.ts
-│   │   │   ├── dto/
-│   │   │   └── entities/
-│   │   │
-│   │   ├── tenants/                  # Multi-tenancy
-│   │   │   ├── tenants.module.ts
-│   │   │   ├── tenants.controller.ts
-│   │   │   ├── tenants.service.ts
-│   │   │   ├── middleware/
-│   │   │   │   └── tenant.middleware.ts
-│   │   │   ├── dto/
-│   │   │   └── entities/
-│   │   │
-│   │   ├── cases/                    # Case management
-│   │   │   ├── cases.module.ts
-│   │   │   ├── cases.controller.ts
-│   │   │   ├── cases.service.ts
-│   │   │   ├── cases.repository.ts
-│   │   │   ├── dto/
-│   │   │   │   ├── create-case.dto.ts
-│   │   │   │   ├── update-case.dto.ts
-│   │   │   │   └── case-filter.dto.ts
-│   │   │   └── entities/
-│   │   │       ├── case.entity.ts
-│   │   │       └── case-event.entity.ts
-│   │   │
-│   │   ├── clients/                   # Client management
-│   │   │   ├── clients.module.ts
-│   │   │   ├── clients.controller.ts
-│   │   │   ├── clients.service.ts
-│   │   │   ├── dto/
-│   │   │   └── entities/
-│   │   │
-│   │   ├── documents/                 # Document handling
-│   │   │   ├── documents.module.ts
-│   │   │   ├── documents.controller.ts
-│   │   │   ├── documents.service.ts
-│   │   │   ├── s3.service.ts
-│   │   │   ├── dto/
-│   │   │   └── entities/
-│   │   │
-│   │   ├── ai/                       # AI integration
-│   │   │   ├── ai.module.ts
-│   │   │   ├── ai.controller.ts
-│   │   │   ├── ai.service.ts
-│   │   │   ├── orchestrator.service.ts
-│   │   │   ├── dto/
-│   │   │   └── gateways/
-│   │   │       └── ai.gateway.ts     # WebSocket gateway
-│   │   │
-│   │   ├── billing/                   # Billing & invoicing
-│   │   │   ├── billing.module.ts
-│   │   │   ├── invoices/
-│   │   │   ├── time-entries/
-│   │   │   └── stripe/
-│   │   │
-│   │   ├── notifications/             # Notifications
-│   │   │   ├── notifications.module.ts
-│   │   │   ├── notifications.controller.ts
-│   │   │   ├── notifications.service.ts
-│   │   │   ├── notifications.gateway.ts  # WebSocket
-│   │   │   ├── email.service.ts
-│   │   │   └── dto/
-│   │   │
-│   │   └── queue/                     # BullMQ processing
-│   │       ├── queue.module.ts
-│   │       └── processors/
-│   │           ├── document.processor.ts
-│   │           └── notification.processor.ts
+│   ├── prisma/                       # Database
+│   │   ├── schema.prisma            # Full schema with pgvector
+│   │   ├── prisma.module.ts
+│   │   └── prisma.service.ts
 │   │
-│   └── prisma/                        # Database
-│       ├── schema.prisma
-│       └── migrations/
+│   ├── common/                       # Shared utilities
+│   │   ├── decorators/
+│   │   │   ├── request.decorator.ts  # @TenantId, @CurrentUser
+│   │   │   ├── roles.decorator.ts    # @Roles
+│   │   │   ├── public.decorator.ts   # @Public
+│   │   │   └── throttle.decorator.ts # @Throttle
+│   │   │
+│   │   ├── guards/
+│   │   │   ├── jwt-auth.guard.ts    # JWT authentication
+│   │   │   ├── tenant.guard.ts      # Tenant validation
+│   │   │   ├── roles.guard.ts       # Role-based access
+│   │   │   └── throttle.guard.ts    # Rate limiting
+│   │   │
+│   │   ├── filters/
+│   │   │   └── http-exception.filter.ts
+│   │   │
+│   │   ├── interceptors/
+│   │   │   ├── logging.interceptor.ts
+│   │   │   └── transform.interceptor.ts
+│   │   │
+│   │   └── utils/
+│   │       ├── sanitize.ts
+│   │       └── hash.ts
+│   │
+│   └── modules/
+│       ├── auth/                     # Authentication
+│       │   ├── auth.module.ts
+│       │   ├── auth.controller.ts
+│       │   ├── auth.service.ts
+│       │   ├── strategies/jwt.strategy.ts
+│       │   └── dto/
+│       │
+│       ├── users/                    # User management
+│       │   ├── users.module.ts
+│       │   ├── users.controller.ts
+│       │   ├── users.service.ts
+│       │   └── dto/
+│       │
+│       ├── tenants/                  # Multi-tenancy
+│       │   ├── tenants.module.ts
+│       │   ├── tenants.controller.ts
+│       │   ├── tenants.service.ts
+│       │   └── middleware/tenant.middleware.ts
+│       │
+│       ├── cases/                    # Case management
+│       │   ├── cases.module.ts
+│       │   ├── cases.controller.ts
+│       │   ├── cases.service.ts
+│       │   ├── cases.repository.ts
+│       │   └── dto/
+│       │
+│       ├── clients/                  # Client management
+│       │   ├── clients.module.ts
+│       │   ├── clients.controller.ts
+│       │   └── clients.service.ts
+│       │
+│       ├── documents/                # Document handling
+│       │   ├── documents.module.ts
+│       │   ├── documents.controller.ts
+│       │   ├── documents.service.ts
+│       │   └── s3.service.ts
+│       │
+│       ├── ai/                       # AI integration
+│       │   ├── ai.module.ts
+│       │   ├── ai.controller.ts
+│       │   ├── ai.service.ts
+│       │   └── orchestrator.service.ts
+│       │
+│       ├── billing/                  # Billing
+│       │   ├── billing.module.ts
+│       │   ├── invoices/
+│       │   └── time-entries/
+│       │
+│       ├── notifications/            # Notifications
+│       │   ├── notifications.module.ts
+│       │   ├── notifications.controller.ts
+│       │   ├── notifications.service.ts
+│       │   └── notifications.gateway.ts # WebSocket
+│       │
+│       └── queue/                   # BullMQ
+│           ├── queue.module.ts
+│           └── processors/
+│               ├── document.processor.ts
+│               └── notification.processor.ts
 │
-├── test/                              # E2E tests
-│   └── *.e2e-spec.ts
+├── test/
+│   └── jest-e2e.json
 │
 ├── Dockerfile
+├── Dockerfile.dev
 ├── tsconfig.json
+├── tsconfig.build.json
 ├── nest-cli.json
-└── package.json
+├── package.json
+├── .eslintrc.js
+├── .prettierrc
+└── .env.example
 ```
 
 ---
 
-## 4. Frontend Structure (Next.js)
+## 4. Frontend Structure (Next.js 14)
 
 ```
 frontend/
 ├── src/
-│   ├── app/                           # App Router pages
-│   │   ├── (auth)/                    # Auth route group
+│   ├── app/                          # App Router
+│   │   ├── layout.tsx               # Root layout
+│   │   ├── page.tsx                 # Home (redirects)
+│   │   ├── globals.css
+│   │   │
+│   │   ├── (auth)/                  # Auth route group
+│   │   │   ├── layout.tsx
 │   │   │   ├── login/
-│   │   │   ├── register/
-│   │   │   └── forgot-password/
-│   │   │
-│   │   ├── (dashboard)/               # Protected dashboard
-│   │   │   ├── layout.tsx             # Dashboard layout
-│   │   │   ├── page.tsx               # Dashboard home
-│   │   │   │
-│   │   │   ├── cases/
-│   │   │   │   ├── page.tsx           # Cases list
-│   │   │   │   └── [id]/
-│   │   │   │       ├── page.tsx       # Case detail
-│   │   │   │       ├── documents/
-│   │   │   │       ├── timeline/
-│   │   │   │       └── billing/
-│   │   │   │
-│   │   │   ├── clients/
 │   │   │   │   ├── page.tsx
-│   │   │   │   └── [id]/
-│   │   │   │
-│   │   │   ├── documents/
-│   │   │   │   ├── page.tsx
-│   │   │   │   └── [id]/
-│   │   │   │
-│   │   │   ├── ai/
-│   │   │   │   ├── page.tsx           # Chat interface
-│   │   │   │   └── sessions/
-│   │   │   │
-│   │   │   ├── billing/
-│   │   │   │   ├── invoices/
-│   │   │   │   └── time-entries/
-│   │   │   │
-│   │   │   ├── calendar/
-│   │   │   │   └── page.tsx
-│   │   │   │
-│   │   │   └── settings/
+│   │   │   │   └── layout.tsx
+│   │   │   └── register/
 │   │   │       ├── page.tsx
-│   │   │       ├── profile/
-│   │   │       ├── team/
-│   │   │       └── notifications/
+│   │   │       └── layout.tsx
 │   │   │
-│   │   ├── (client-portal)/          # Client-facing portal
-│   │   │   ├── portal/
-│   │   │   │   ├── cases/
-│   │   │   │   ├── documents/
-│   │   │   │   └── messages/
-│   │   │   └── layout.tsx
-│   │   │
-│   │   ├── api/                      # API route handlers (if needed)
-│   │   │
-│   │   ├── layout.tsx                # Root layout
-│   │   └── globals.css
+│   │   └── (dashboard)/             # Protected dashboard
+│   │       ├── layout.tsx           # Dashboard layout
+│   │       ├── page.tsx             # Dashboard home
+│   │       │
+│   │       ├── cases/
+│   │       │   ├── page.tsx
+│   │       │   ├── new/page.tsx
+│   │       │   └── [id]/
+│   │       │       ├── page.tsx
+│   │       │       └── layout.tsx
+│   │       │
+│   │       ├── clients/
+│   │       │   ├── page.tsx
+│   │       │   └── [id]/
+│   │       │
+│   │       ├── documents/
+│   │       │   ├── page.tsx
+│   │       │   └── [id]/
+│   │       │
+│   │       ├── ai/
+│   │       │   └── page.tsx         # Chat interface
+│   │       │
+│   │       ├── billing/
+│   │       │   └── page.tsx
+│   │       │
+│   │       ├── calendar/
+│   │       │   └── page.tsx
+│   │       │
+│   │       └── settings/
+│   │           └── page.tsx
 │   │
 │   ├── components/
-│   │   ├── ui/                        # ShadCN components
+│   │   ├── ui/                      # ShadCN/Radix components
 │   │   │   ├── button.tsx
 │   │   │   ├── input.tsx
 │   │   │   ├── card.tsx
-│   │   │   └── ...
+│   │   │   ├── label.tsx
+│   │   │   ├── table.tsx
+│   │   │   ├── toast.tsx
+│   │   │   └── toaster.tsx
 │   │   │
-│   │   ├── layout/                   # Layout components
+│   │   ├── layout/                 # Layout components
 │   │   │   ├── sidebar.tsx
-│   │   │   ├── header.tsx
-│   │   │   ├── footer.tsx
-│   │   │   └── navbar.tsx
+│   │   │   └── header.tsx
 │   │   │
-│   │   ├── cases/
-│   │   │   ├── case-list.tsx
-│   │   │   ├── case-card.tsx
-│   │   │   ├── case-form.tsx
-│   │   │   ├── case-status.tsx
-│   │   │   └── case-timeline.tsx
-│   │   │
-│   │   ├── documents/
-│   │   │   ├── document-uploader.tsx
-│   │   │   ├── document-list.tsx
-│   │   │   ├── document-viewer.tsx
-│   │   │   └── document-search.tsx
-│   │   │
-│   │   ├── ai/
-│   │   │   ├── chat-interface.tsx
-│   │   │   ├── chat-message.tsx
-│   │   │   ├── source-citation.tsx
-│   │   │   └── thinking-indicator.tsx
-│   │   │
-│   │   ├── billing/
-│   │   │   ├── invoice-form.tsx
-│   │   │   ├── time-tracker.tsx
-│   │   │   └── invoice-list.tsx
-│   │   │
-│   │   └── shared/                   # Reusable components
-│   │       ├── data-table.tsx
-│   │       ├── modal.tsx
-│   │       ├── toast.tsx
-│   │       └── loading-spinner.tsx
+│   │   └── providers.tsx            # React Query + Theme
 │   │
-│   ├── hooks/                         # Custom React hooks
-│   │   ├── use-cases.ts
-│   │   ├── use-documents.ts
-│   │   ├── use-auth.ts
-│   │   ├── use-tenant.ts
-│   │   └── use-toast.ts
+│   ├── hooks/                       # Custom React hooks
 │   │
-│   ├── lib/                           # Utilities
-│   │   ├── api.ts                     # API client
-│   │   ├── auth.ts                    # Auth utilities
-│   │   ├── utils.ts                   # Helper functions
-│   │   └── validators/                # Zod schemas
-│   │       ├── case.schema.ts
-│   │       └── document.schema.ts
+│   ├── lib/                        # Utilities
+│   │   ├── api.ts                  # Axios client with interceptors
+│   │   ├── utils.ts                # Helper functions
+│   │   └── validators/             # Zod schemas
+│   │       ├── auth.schema.ts
+│   │       └── case.schema.ts
 │   │
-│   ├── stores/                        # Zustand stores
+│   ├── stores/                     # Zustand stores
 │   │   ├── auth-store.ts
 │   │   ├── tenant-store.ts
-│   │   └── ui-store.ts
+│   │   ├── ui-store.ts
+│   │   └── index.ts
 │   │
-│   └── types/                         # TypeScript types
-│       ├── api.ts
-│       ├── case.ts
-│       └── document.ts
+│   └── types/                      # TypeScript types
 │
-├── public/                            # Static assets
-├── components.json                     # ShadCN config
+├── public/
+├── package.json
 ├── next.config.js
 ├── tailwind.config.ts
+├── postcss.config.js
 ├── tsconfig.json
-├── package.json
+├── .eslintrc.json
+├── .prettierrc
 └── Dockerfile
 ```
 
@@ -337,49 +308,36 @@ frontend/
 ```
 ai-service/
 ├── app/
-│   ├── main.py                        # FastAPI entry point
+│   ├── main.py                     # FastAPI entry point
 │   │
-│   ├── api/                           # API routes
-│   │   ├── __init__.py
-│   │   ├── routes/
-│   │   │   ├── __init__.py
-│   │   │   ├── chat.py               # Chat endpoint
-│   │   │   ├── documents.py          # Document processing
-│   │   │   ├── embeddings.py         # Embedding generation
-│   │   │   └── search.py             # Vector search
-│   │   └── deps.py                    # Dependencies
+│   ├── api/
+│   │   └── routes/
+│   │       ├── chat.py            # Chat endpoint
+│   │       ├── documents.py       # Document analysis
+│   │       ├── embeddings.py     # Embedding generation
+│   │       └── search.py         # Vector search
 │   │
-│   ├── agents/                        # AI Agents
-│   │   ├── __init__.py
-│   │   ├── orchestrator.py           # Main orchestrator
-│   │   ├── legal_assistant.py        # Legal Q&A
-│   │   ├── document_analyzer.py      # Document analysis
-│   │   ├── case_summary.py           # Case summarization
-│   │   ├── contract_review.py        # Contract review
-│   │   └── research.py               # Legal research
+│   ├── agents/                    # AI Agents
+│   │   ├── orchestrator.py       # Main orchestrator
+│   │   ├── legal_assistant.py     # Legal Q&A
+│   │   └── document_analyzer.py  # Document analysis
 │   │
-│   ├── core/                          # Core services
-│   │   ├── __init__.py
-│   │   ├── config.py                 # Settings
-│   │   ├── llm.py                    # LLM client (Anthropic/OpenAI)
-│   │   └── prompts.py                # Prompt templates
+│   ├── core/                      # Core services
+│   │   ├── config.py             # Settings
+│   │   ├── llm.py                # LLM client (Anthropic)
+│   │   └── prompts.py            # Prompt templates
 │   │
-│   ├── services/                      # Business logic
-│   │   ├── __init__.py
-│   │   ├── embedding.py              # Embedding generation
-│   │   ├── vector_store.py           # pgvector operations
-│   │   ├── document_processor.py      # PDF/DOCX extraction
-│   │   ├── ocr.py                    # Tesseract OCR
-│   │   └── chunker.py               # Text chunking
+│   ├── services/                  # Business logic
+│   │   ├── embedding.py          # Embedding generation
+│   │   ├── vector_store.py       # pgvector operations
+│   │   └── document_processor.py  # PDF/DOCX extraction
 │   │
-│   └── models/                       # Pydantic models
-│       ├── __init__.py
+│   └── models/                   # Pydantic models
 │       ├── chat.py
 │       ├── document.py
 │       └── search.py
 │
 ├── tests/
-│   ├── __init__.py
 │   ├── test_agents.py
 │   ├── test_embeddings.py
 │   └── test_chunker.py
@@ -387,188 +345,108 @@ ai-service/
 ├── Dockerfile
 ├── requirements.txt
 ├── pyproject.toml
-└── README.md
+└── .env.example
 ```
 
 ---
 
-## 6. Database Schema Overview (Prisma)
+## 6. Database Schema (Prisma)
+
+**Core Models:**
+- `Tenant` - Multi-tenant organization
+- `User` - Users with roles (ADMIN, LAWYER, PARALEGAL, SECRETARY, CLIENT)
+- `Client` - Law firm clients
+- `Case` - Legal cases with status tracking
+- `CaseEvent` - Case timeline events
+- `Document` - Uploaded documents with S3 storage
+- `DocumentEmbedding` - pgvector embeddings for RAG
+- `TimeEntry` - Billing time tracking
+- `Invoice` - Client invoicing
+- `AiSession` - Chat history
+- `RefreshToken` - JWT refresh tokens
+- `Notification` - User notifications
+
+---
+
+## 7. API Routes
 
 ```
-┌─────────────────┐     ┌─────────────────┐
-│     Tenant      │     │      User       │
-├─────────────────┤     ├─────────────────┤
-│ id (PK)         │◀───││ tenantId (FK)  │
-│ name            │     │ id (PK)         │
-│ slug            │     │ email           │
-│ plan            │     │ password        │
-│ settings        │     │ role            │
-│ createdAt       │     │ name            │
-└─────────────────┘     │ isActive        │
-        │              └─────────────────┘
-        │                      │
-        │              ┌───────┴───────┐
-        ▼              ▼               ▼
-┌─────────────────┐ ┌──────────┐ ┌──────────┐
-│      Case       │ │  Client  │ │ Document │
-├─────────────────┤ ├──────────┤ ├──────────┤
-│ id (PK)         │ │ id (PK)  │ │ id (PK)  │
-│ tenantId (FK)   │ │ tenantId │ │ tenantId │
-│ caseNumber      │ │ name     │ │ caseId   │
-│ title           │ │ email    │ │ name     │
-│ status          │ │ phone    │ │ s3Key    │
-│ type            │ │ company  │ │ status   │
-│ clientId (FK)───┼─┘          │ │ extracted│
-│ courtDate       │            │ │ summary  │
-│ aiSummary       │            └──────────┘
-└─────────────────┘
-        │
-        ├──┬──────────┬──────────┐
-        ▼  ▼          ▼          ▼
-   ┌──────────┐ ┌──────────┐ ┌──────────┐
-   │CaseEvent │ │TimeEntry │ │ Invoice  │
-   ├──────────┤ ├──────────┤ ├──────────┤
-   │ id       │ │ id       │ │ id       │
-   │ caseId   │ │ caseId   │ │ clientId │
-   │ type     │ │ lawyerId │ │ status   │
-   │ title    │ │ hours    │ │ total    │
-   │ date     │ │ amount   │ │ dueDate  │
-   └──────────┘ └──────────┘ └──────────┘
-
-┌──────────────────────────────┐
-│   DocumentEmbedding (pgvector)│
-├──────────────────────────────┤
-│ id (PK)                       │
-│ tenantId                      │
-│ documentId                    │
-│ caseId                        │
-│ chunkIndex                    │
-│ content                       │
-│ embedding (vector)            │
-│ metadata (JSON)               │
-└──────────────────────────────┘
+Backend API (NestJS) - Port 3000
+│
+├── POST /api/auth/login
+├── POST /api/auth/register
+├── POST /api/auth/refresh
+├── POST /api/auth/logout
+│
+├── GET  /api/users
+├── GET  /api/users/:id
+├── POST /api/users
+├── PATCH /api/users/:id
+│
+├── GET  /api/tenants/:id
+├── POST /api/tenants
+│
+├── GET  /api/cases
+├── POST /api/cases
+├── GET  /api/cases/:id
+├── PATCH /api/cases/:id
+├── DELETE /api/cases/:id
+├── POST /api/cases/:id/events
+│
+├── GET  /api/clients
+├── POST /api/clients
+├── GET  /api/clients/:id
+├── PATCH /api/clients/:id
+│
+├── GET  /api/documents
+├── POST /api/documents/upload
+├── GET  /api/documents/:id
+├── GET  /api/documents/:id/download
+├── DELETE /api/documents/:id
+│
+├── POST /api/ai/chat
+├── POST /api/ai/summarize/case/:caseId
+├── POST /api/ai/analyze/document/:documentId
+├── GET  /api/ai/sessions
+│
+├── GET  /api/billing/invoices
+├── POST /api/billing/invoices
+├── GET  /api/billing/time-entries
+├── POST /api/billing/time-entries
+│
+└── GET  /api/notifications
+    ├── GET  /api/notifications/unread-count
+    └── PATCH /api/notifications/:id/read
 ```
 
 ---
 
-## 7. API Routes Overview
+## 8. Running the Application
 
+### Development
+```bash
+# All services
+docker-compose -f docker-compose.dev.yml up -d
+
+# Individual services
+cd backend && npm install && npm run start:dev
+cd frontend && npm install && npm run dev
+cd ai-service && pip install -r requirements.txt && uvicorn app.main:app --reload
 ```
-Backend API (NestJS)
-│
-├── /api/auth
-│   ├── POST   /auth/login
-│   ├── POST   /auth/register
-│   ├── POST   /auth/refresh
-│   └── POST   /auth/logout
-│
-├── /api/users
-│   ├── GET    /users
-│   ├── GET    /users/:id
-│   ├── PATCH  /users/:id
-│   └── POST   /users/invite
-│
-├── /api/tenants
-│   ├── POST   /tenants
-│   ├── GET    /tenants/:id
-│   └── PATCH  /tenants/:id
-│
-├── /api/cases
-│   ├── GET    /cases
-│   ├── POST   /cases
-│   ├── GET    /cases/:id
-│   ├── PATCH  /cases/:id
-│   ├── DELETE /cases/:id
-│   ├── GET    /cases/:id/timeline
-│   ├── POST   /cases/:id/events
-│   └── GET    /cases/:id/summary
-│
-├── /api/clients
-│   ├── GET    /clients
-│   ├── POST   /clients
-│   ├── GET    /clients/:id
-│   └── PATCH  /clients/:id
-│
-├── /api/documents
-│   ├── POST   /documents/upload
-│   ├── GET    /documents/:id
-│   ├── DELETE /documents/:id
-│   ├── GET    /documents/:id/download
-│   └── POST   /documents/search
-│
-├── /api/ai
-│   ├── POST   /ai/chat
-│   ├── POST   /ai/summarize/:caseId
-│   ├── POST   /ai/analyze/:docId
-│   └── GET    /ai/sessions
-│
-├── /api/billing
-│   ├── GET    /billing/invoices
-│   ├── POST   /billing/invoices
-│   ├── GET    /billing/time-entries
-│   └── POST   /billing/time-entries
-│
-└── /api/notifications
-    ├── GET    /notifications
-    └── PATCH  /notifications/:id/read
+
+### Production
+```bash
+docker-compose -f docker-compose.prod.yml up -d
 ```
 
 ---
 
-## 8. Request/Response Patterns
+## 9. Key Files Reference
 
-### Standard API Response
-```typescript
-// Success
-{
-  "data": Case | Case[],
-  "meta": { "total": 100, "page": 1, "limit": 20 },
-  "success": true
-}
+| Service | Key Files |
+|---------|-----------|
+| Backend | `src/main.ts`, `src/app.module.ts`, `src/prisma/schema.prisma` |
+| Frontend | `src/app/(dashboard)/page.tsx`, `src/lib/api.ts`, `src/stores/auth-store.ts` |
+| AI | `app/main.py`, `app/core/llm.py`, `app/agents/orchestrator.py` |
 
-// Error
-{
-  "statusCode": 400,
-  "message": "Validation failed",
-  "error": "Bad Request",
-  "details": [...]
-}
-```
-
-### Authentication Flow
-```
-1. User → POST /api/auth/login { email, password }
-   ← { accessToken, refreshToken }
-
-2. All subsequent requests → Header: Authorization: Bearer <token>
-
-3. Token expires (15min) → POST /api/auth/refresh { refreshToken }
-   ← { accessToken, refreshToken } (rotation)
-```
-
----
-
-## 9. Environment Configuration
-
-```
-# Development
-.env.local (per developer, gitignored)
-
-# Staging/Production
-GitHub Secrets → Kubernetes Secrets
-
-# Required Variables:
-DATABASE_URL=postgresql://...
-MONGODB_URI=mongodb://...
-REDIS_URL=redis://...
-JWT_SECRET=<64-char-random>
-JWT_REFRESH_SECRET=<64-char-random>
-S3_BUCKET=...
-S3_ACCESS_KEY=...
-S3_SECRET_KEY=...
-AI_SERVICE_URL=http://ai-service:8000
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-SMTP_HOST=smtp.example.com
-STRIPE_SECRET_KEY=sk_live_...
-```
+See `docs/AGENTS.md` for coding guidelines.

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env.local
+.env.*.local
+
+# Prisma
+prisma/migrations/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
