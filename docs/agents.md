@@ -1,554 +1,300 @@
-# COLS – AI Agents System Design
-### agents.md | Version 1.0
+# COLS – Agent Coding Guidelines
+### AGENTS.md | Version 2.0
 
 ---
 
-## 1. نظرة عامة على نظام الـ Agents
+## 1. Project Overview
 
-COLS يعتمد على **Multi-Agent Architecture** حيث كل agent متخصصة في مهمة قانونية محددة. الـ agents تتواصل عبر **Orchestrator Agent** مركزي يقرر أي agent تُستدعى بناءً على طلب المستخدم.
+**COLS** (Collaborative Online Legal System) is a Legal SaaS platform for law firms with:
+- **Frontend**: Next.js 14 + TypeScript + TailwindCSS + ShadCN
+- **Backend**: NestJS (TypeScript) + Prisma + PostgreSQL + pgvector
+- **AI Service**: Python FastAPI + LangChain + multilingual-e5-large embeddings
+- **Infrastructure**: Docker, Redis, BullMQ, S3-compatible storage
 
-```
-User Request
-    ↓
-[Orchestrator Agent]
-    ↓
-┌──────┬──────┬──────┬──────┬──────┐
-│Legal │Doc   │Case  │Cont- │Resch │
-│Asst. │Anlyz.│Summ. │ract  │-arch │
-│Agent │Agent │Agent │Agent │Agent │
-└──────┴──────┴──────┴──────┴──────┘
-    ↓
-[RAG Pipeline] ← [Vector DB] ← [Document Store]
-    ↓
-Response to User
-```
+**Multi-tenancy**: Every query MUST include `tenantId` filter. Data isolation is mandatory.
 
 ---
 
-## 2. قائمة الـ Agents
+## 2. Build & Development Commands
 
-### Agent 1: Orchestrator Agent (المنسق الرئيسي)
+### Standard Development
+```bash
+# Install dependencies
+npm install
 
-**الدور:** Brain of the system — يستقبل كل طلب، يحدد الـ intent، ويوجه للـ agent المناسب أو يستدعي عدة agents بالتسلسل.
+# Start all services (Docker)
+docker-compose -f docker-compose.dev.yml up -d
 
-**Inputs:**
-- User message (text)
-- Conversation history
-- User context (role, current case, tenant_id)
-- Available agents list
-
-**Outputs:**
-- Agent selection decision
-- Structured task for selected agent
-- Final composed response
-
-**Tools:**
-- Intent classifier (fine-tuned model)
-- Agent registry
-- Context manager
-
-**Prompt Strategy:**
+# Run individual services
+npm run dev              # NestJS with hot reload
+cd frontend && npm run dev  # Next.js
+cd ai-service && uvicorn main:app --reload  # Python FastAPI
 ```
-System: You are the orchestration layer for COLS legal AI system.
-Your job is ONLY to route requests, not to answer them.
 
-Given the user message and context, output a JSON:
-{
-  "intent": "document_analysis|case_summary|legal_research|contract_review|general_qa",
-  "agent": "DocumentAnalyzerAgent|CaseSummaryAgent|LegalResearchAgent|ContractAgent|LegalAssistantAgent",
-  "sub_tasks": [...],
-  "requires_rag": true|false,
-  "case_context_needed": true|false,
-  "priority": "high|medium|low"
-}
+### Code Quality
+```bash
+npm run lint           # ESLint check
+npm run type-check     # TypeScript compiler validation
+npm run format         # Prettier auto-format
+npm run format:check  # Check formatting without changes
+```
 
-Always consider:
-1. User's current case context
-2. Their role (partner/associate/client)
-3. Urgency signals (words like "urgent", "tomorrow", "court date")
+### Testing
+```bash
+# Run all tests
+npm run test           # Watch mode
+npm run test:unit      # Unit tests only
+npm run test:unit -- --testPathPattern=case  # Single test file
+npm run test:unit -- --testNamePattern="should create"  # Single test
+npm run test:coverage  # With coverage report
+npm run test:e2e       # E2E tests (requires running services)
+```
+
+### Database
+```bash
+npx prisma generate    # Generate Prisma client
+npx prisma migrate dev # Run migrations
+npx prisma studio      # Visual DB editor
 ```
 
 ---
 
-### Agent 2: Legal Assistant Agent (المساعد القانوني العام)
+## 3. Code Style Guidelines
 
-**الدور:** المساعد الذي يتحدث مع المحامي مباشرة — يجيب على الأسئلة القانونية، يبحث في وثائق المكتب، يقدم اقتراحات.
-
-**Inputs:**
-- User question (Arabic/English)
-- Retrieved RAG context (documents, cases)
-- Conversation history (last 10 turns)
-- Tenant knowledge base
-
-**Outputs:**
-- Detailed legal answer with sources
-- Follow-up suggestions
-- Confidence score
-- Source citations (document name + page)
-
-**Tools:**
-- RAG retrieval (pgvector)
-- Web search (legal databases)
-- Citation formatter
-
-**Prompt Strategy:**
-```
-System: You are COLS Legal Assistant, an expert AI lawyer assistant 
-specialized in [tenant's jurisdiction: Saudi/UAE/Egyptian law].
-
-CRITICAL RULES:
-1. NEVER give legal advice without citing sources
-2. Always add disclaimer: "هذا للمساعدة البحثية فقط، راجع محامياً مختصاً"
-3. Prefer Arabic unless user writes in English
-4. Cite exact document name and section for every claim
-5. If unsure, say so clearly - never hallucinate
-
-Retrieved Context:
-{rag_context}
-
-Current Case Context:
-{case_context}
-
-User Question: {user_message}
-
-Respond with:
-- Main answer (structured, clear)
-- Key legal points (bullet format)
-- Sources used (with confidence)
-- Suggested next actions
-```
-
-**Confidence Thresholds:**
-- >85%: إجابة مباشرة
-- 60-85%: إجابة مع تحفظ واضح
-- <60%: "أنصح بمراجعة متخصص + هذا ما وجدته"
-
----
-
-### Agent 3: Document Analyzer Agent (محلل الوثائق)
-
-**الدور:** يحلل الوثائق القانونية المرفوعة ويستخرج منها معلومات منظمة.
-
-**Inputs:**
-- Document (PDF/DOCX/Image — converted to text)
-- Analysis type (summary | entities | clauses | risks)
-- Language preference
-
-**Outputs:**
+### TypeScript Rules (Strict Mode)
 ```json
+// tsconfig.json enforces:
 {
-  "summary": "ملخص الوثيقة في 3-5 جمل",
-  "document_type": "contract|court_order|legal_memo|evidence",
-  "parties": ["اسم الطرف الأول", "اسم الطرف الثاني"],
-  "key_dates": [
-    {"date": "2025-03-15", "type": "contract_start", "description": "..."}
-  ],
-  "obligations": [
-    {"party": "...", "obligation": "...", "deadline": "..."}
-  ],
-  "risk_flags": [
-    {"severity": "high|medium|low", "issue": "...", "clause": "..."}
-  ],
-  "key_clauses": [...],
-  "confidence": 0.92
+  "strict": true,
+  "noImplicitAny": true,
+  "strictNullChecks": true,
+  "noUnusedLocals": true,
+  "noUnusedParameters": true
 }
 ```
 
-**Tools:**
-- OCR (Tesseract/AWS Textract for Arabic)
-- NER for legal entities
-- Clause classifier
-- Risk scorer
-
-**Prompt Strategy:**
-```
-System: You are a legal document analysis expert. Extract structured 
-information from the provided legal document.
-
-Document Text:
-{document_text}
-
-Analysis Required: {analysis_type}
-
-RULES:
-- Extract ONLY what is explicitly in the document
-- Mark uncertain extractions with [UNCERTAIN]
-- Use exact quotes from document for key clauses
-- Flag any missing standard clauses as risks
-- Output MUST be valid JSON matching the schema
-
-For Arabic documents: maintain Arabic text in extractions
-For mixed documents: extract in original language, summarize in user's preferred language
-```
-
-**Processing Pipeline:**
-```
-File Upload → Text Extraction → Chunking (500 tokens overlap 50) 
-→ Embedding → Vector Store → Analysis Agent → Structured Output
-```
-
----
-
-### Agent 4: Case Summary Agent (ملخص القضايا)
-
-**الدور:** يولد ملخصات ذكية للقضايا للاجتماعات والتقارير ومراجعة الشركاء.
-
-**Inputs:**
-- case_id
-- All case documents
-- Timeline of events
-- Summary type (brief | detailed | court_prep | client_update)
-
-**Outputs:**
-- Executive summary
-- Key facts timeline
-- Strengths & weaknesses
-- Recommended next steps
-- Client-friendly version (مبسط)
-
-**Prompt Strategy:**
-```
-System: You are a senior legal strategist preparing case summaries.
-
-Case Data:
-- Case Name: {case_name}
-- Status: {status}
-- Type: {case_type}
-- Jurisdiction: {jurisdiction}
-- Key Documents: {documents_summary}
-- Timeline: {events_timeline}
-- Team Notes: {notes}
-
-Summary Type: {summary_type}
-
-Generate a {summary_type} summary following this structure:
-
-[للملخص التنفيذي]:
-1. القضية في سطر واحد
-2. الوضع الحالي
-3. أبرز 3 نقاط قوة
-4. أبرز 3 مخاطر
-5. الخطوة التالية الموصى بها
-
-[لتحضير الجلسة]:
-1. الحجج الرئيسية لتقديمها
-2. الوثائق المطلوب تقديمها
-3. الشهود المتوقعون وأسئلة محتملة
-4. نقاط الضعف والرد عليها
-```
-
----
-
-### Agent 5: Contract Review Agent (مراجع العقود)
-
-**الدور:** المتخصص في تحليل العقود، مقارنتها، وتحديد المخاطر والبنود غير المعتادة.
-
-**Inputs:**
-- Contract document(s)
-- Contract type (employment | service | real_estate | partnership)
-- Client position (which party are we representing)
-- Jurisdiction
-
-**Outputs:**
-- Clause-by-clause analysis
-- Risk assessment per clause (Red/Yellow/Green)
-- Missing standard clauses
-- Negotiation recommendations
-- Comparison with previous similar contracts (RAG)
-
-**Prompt Strategy:**
-```
-System: You are a contract law specialist with 20 years experience.
-You ALWAYS represent our client's best interests.
-
-Contract to Review:
-{contract_text}
-
-Our Client: {client_name} | Position: {client_role_in_contract}
-Contract Type: {contract_type}
-Jurisdiction: {jurisdiction}
-
-Perform full contract review:
-
-1. CLAUSE ANALYSIS: For each clause:
-   - Status: ✅ Standard | ⚠️ Needs attention | 🔴 High risk
-   - Why it matters to our client
-   - Recommended modification (if needed)
-
-2. MISSING CLAUSES: List any standard clauses absent
-
-3. RISK SUMMARY: Overall risk level + top 3 risks
-
-4. NEGOTIATION STRATEGY: 
-   - Must-have changes (deal breakers)
-   - Nice-to-have changes
-   - Can accept as-is
-
-Use the firm's previous similar contracts as reference:
-{similar_contracts_rag}
-```
-
----
-
-### Agent 6: Legal Research Agent (الباحث القانوني)
-
-**الدور:** يبحث في قواعد البيانات القانونية والسوابق القضائية للعثور على الحجج الداعمة للقضية.
-
-**Inputs:**
-- Research query
-- Legal issue/question
-- Jurisdiction(s)
-- case_id for context
-
-**Outputs:**
-- Relevant precedents with citations
-- Applicable laws and articles
-- Doctrinal analysis
-- Counter-arguments (للاستعداد)
-
-**Tools:**
-- Internal RAG (firm's documents)
-- External legal databases (future integration)
-- Legal knowledge base (pre-indexed)
-
-**Prompt Strategy:**
-```
-System: You are a legal research specialist. Find relevant law, 
-precedents, and doctrine to support our client's position.
-
-Research Question: {query}
-Case Context: {case_summary}
-Jurisdiction: {jurisdiction}
-Our Position: {client_position}
-
-Retrieved Sources:
-{rag_sources}
-
-Produce research memo:
-1. المسألة القانونية المطروحة
-2. النصوص القانونية المعمول بها (مواد + قوانين)
-3. السوابق القضائية الداعمة (إن وجدت)
-4. الحجج المضادة المتوقعة + الرد عليها
-5. التوصية والخلاصة
-
-Format: Legal memo style, Arabic-first
-```
-
----
-
-### Agent 7: Notification & Alert Agent (وكيل الإشعارات)
-
-**الدور:** يراقب القضايا والمواعيد ويولد إشعارات ذكية وسياقية.
-
-**Inputs:**
-- Cases with deadlines
-- Calendar events
-- Recent changes to cases
-- User preferences
-
-**Outputs:**
-- Prioritized alerts
-- Smart reminders
-- AI-generated context for each alert ("موعد جلسة غداً - القضية لم تُحدَّث منذ أسبوعين")
-
-**Trigger Events:**
-```
-- Court date within 3 days → HIGH priority alert
-- Document deadline tomorrow → URGENT alert
-- Case inactive for 7+ days → REMINDER
-- New document added to case → NOTIFICATION
-- Client message received → IMMEDIATE
-```
-
----
-
-## 3. Agent Communication Flow
-
-```
-┌─────────────────────────────────────────────────┐
-│                  USER INTERFACE                   │
-└──────────────────────┬──────────────────────────┘
-                       │ HTTP Request
-                       ▼
-┌─────────────────────────────────────────────────┐
-│              API GATEWAY (NestJS)                 │
-│         Auth → Rate Limit → Tenant Check          │
-└──────────────────────┬──────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────┐
-│           ORCHESTRATOR AGENT                      │
-│   Intent Classification → Agent Routing           │
-│   Context Injection → Task Decomposition          │
-└────┬─────────┬────────┬──────────┬──────────────┘
-     │         │        │          │
-     ▼         ▼        ▼          ▼
-┌────────┐ ┌──────┐ ┌──────┐ ┌────────┐
-│Legal   │ │Doc   │ │Case  │ │Contract│
-│Asst.   │ │Anlyz.│ │Summ. │ │Review  │  ...
-└───┬────┘ └──┬───┘ └──┬───┘ └────┬───┘
-    │         │        │          │
-    └─────────┴────────┴──────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────┐
-│              RAG PIPELINE                         │
-│   Query → Embed → Retrieve → Rerank → Inject     │
-└──────────────────────┬──────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────┐
-│            VECTOR DATABASE (pgvector)             │
-│   Per-tenant namespaced collections               │
-└─────────────────────────────────────────────────┘
-```
-
----
-
-## 4. RAG Pipeline Architecture
-
-### Pipeline Flow
-
-```
-INGESTION PIPELINE:
-Document Upload
-    → Text Extraction (PyMuPDF / Tesseract OCR)
-    → Language Detection
-    → Chunking Strategy:
-        Legal Documents: 800 tokens, 150 overlap
-        Court Orders: 500 tokens, 100 overlap
-        Contracts: 1000 tokens, 200 overlap
-    → Embedding (text-embedding-3-large / multilingual-e5-large for Arabic)
-    → Metadata tagging {tenant_id, case_id, doc_type, date, parties}
-    → Store in pgvector with RLS (Row Level Security)
-
-RETRIEVAL PIPELINE:
-User Query
-    → Query Expansion (Arabic/English variants)
-    → Hybrid Search: Semantic (70%) + BM25 Keyword (30%)
-    → Tenant-filtered retrieval (WHERE tenant_id = ?)
-    → Top-K retrieval (K=10)
-    → Cross-encoder Reranking (Top 5)
-    → Context Assembly with citations
-    → Inject into Agent prompt
-```
-
-### Embedding Strategy
-
-```python
-# Arabic-optimized embedding approach
-EMBEDDING_MODELS = {
-    "arabic_primary": "intfloat/multilingual-e5-large",  # 560M params, strong Arabic
-    "english_primary": "text-embedding-3-large",          # OpenAI, high quality
-    "hybrid": True  # Store both, query both, merge scores
+**Required Patterns:**
+```typescript
+// ✅ GOOD: Explicit types, return type, tenant validation
+async getCaseById(id: string, tenantId: string): Promise<Case | null> {
+  return this.caseRepo.findOne({ where: { id, tenantId } });
 }
 
-CHUNKING_CONFIG = {
-    "contract": {"size": 1000, "overlap": 200},
-    "court_order": {"size": 500, "overlap": 100},
-    "legal_memo": {"size": 800, "overlap": 150},
-    "evidence": {"size": 600, "overlap": 120}
+// ❌ BAD: Implicit any, no return type
+async getCaseById(id, tenantId) {
+  return this.caseRepo.findOne({ id, tenantId });
+}
+```
+
+### Imports & Structure
+```typescript
+// Order: 1. External 2. Internal 3. Relative
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { CaseRepository } from '../repositories/case.repository';
+import { CreateCaseDto } from './dto/create-case.dto';
+
+// File naming: kebab-case for files, PascalCase for classes
+// case.service.ts, create-case.dto.ts, case.entity.ts
+```
+
+### Naming Conventions
+```
+Classes:     PascalCase (CaseService, DocumentController)
+Functions:   camelCase (createCase, findById)
+Variables:   camelCase (caseData, isActive)
+Constants:   UPPER_SNAKE_CASE (MAX_RETRY_COUNT)
+Types/Enums: PascalCase (CaseStatus, UserRole)
+Files:       kebab-case (case.service.ts, auth.module.ts)
+```
+
+### Error Handling
+```typescript
+// Always handle errors with proper NestJS exceptions
+async createCase(dto: CreateCaseDto, tenantId: string): Promise<Case> {
+  try {
+    return await this.caseRepo.create({ ...dto, tenantId });
+  } catch (error) {
+    if (error.code === 'P2002') {
+      throw new ConflictException('Case with this number already exists');
+    }
+    throw error;
+  }
+}
+
+// Use Result pattern for service methods
+async findOrFail(id: string, tenantId: string): Promise<Case> {
+  const case = await this.caseRepo.findOne({ where: { id, tenantId } });
+  if (!case) {
+    throw new NotFoundException(`Case ${id} not found`);
+  }
+  return case;
+}
+```
+
+### DTOs & Validation
+```typescript
+// Use class-validator for all DTOs
+export class CreateCaseDto {
+  @IsString()
+  @MaxLength(200)
+  title: string;
+
+  @IsEnum(CaseType)
+  type: CaseType;
+
+  @IsUUID()
+  clientId: string;
+
+  @IsOptional()
+  @IsDateString()
+  courtDate?: string;
 }
 ```
 
 ---
 
-## 5. Memory & Context Handling
+## 4. Security Requirements
 
-### Short-term Memory (Conversation)
-```
-- Redis: last 20 conversation turns per user session
-- TTL: 24 hours after last activity
-- Structure: {user_id, session_id, messages[], current_case_id, active_documents}
-```
+**CRITICAL - Never Do:**
+```typescript
+// ❌ Log sensitive data
+logger.log(`User password: ${password}`);
 
-### Long-term Memory (Knowledge)
-```
-- PostgreSQL: user preferences, frequently asked topics, case history
-- Vector DB: all embedded documents (permanent, per tenant)
-- Retrieval: semantic search on user's history for personalization
-```
+// ❌ Raw SQL (SQL injection risk)
+const q = `SELECT * FROM users WHERE id = ${userId}`;
 
-### Context Window Management
-```
-PRIORITY ORDER (when context window is limited):
-1. Current query (always)
-2. Last 5 conversation turns
-3. Current case summary (if active)
-4. Top 5 RAG retrieved chunks
-5. User role context
-6. System instructions
-
-MAX TOKENS: 4000 (input) | 2000 (output) per call
-OVERFLOW STRATEGY: Summarize older turns, keep recent + relevant
+// ❌ Skip tenant validation
+async getCase(id: string) {
+  return this.repo.findOne({ id }); // Missing tenantId!
+}
 ```
 
-### Tenant Isolation
-```sql
--- Every vector search includes tenant filter
-SELECT * FROM document_embeddings 
-WHERE tenant_id = $1 
-  AND embedding <-> $2 < 0.3
-ORDER BY embedding <-> $2
-LIMIT 10;
+**Always Do:**
+```typescript
+// ✅ Validate tenant on every query
+async getCase(id: string, tenantId: string): Promise<Case> {
+  const found = await this.repo.findOne({ where: { id, tenantId } });
+  if (!found) throw new NotFoundException();
+  return found;
+}
+
+// ✅ Sanitize inputs
+@IsString() @MaxLength(500) @Transform(({ value }) => sanitizeHtml(value))
+title: string;
+
+// ✅ Rate limit AI endpoints
+@Throttle({ default: { limit: 20, ttl: 60000 } })
+@Post('chat')
 ```
 
 ---
 
-## 6. Orchestration Logic
+## 5. Git & Commits (Conventional Commits)
 
-### Decision Tree
-```
-IF intent = "document_analysis":
-    IF file attached → DocumentAnalyzerAgent
-    IF referring to existing doc → RAG + LegalAssistantAgent
+```bash
+# Format: type(scope): description
+git commit -m "feat(case): add case creation endpoint"
+git commit -m "fix(auth): handle expired refresh token"
+git commit -m "test(billing): add invoice generation tests"
 
-IF intent = "case_summary":
-    CaseSummaryAgent(case_id)
-
-IF intent = "legal_research":
-    LegalResearchAgent → RAG search → response
-
-IF intent = "contract_review":
-    DocumentAnalyzerAgent → ContractReviewAgent (sequential)
-
-IF intent = "general_qa":
-    LegalAssistantAgent + RAG
-
-IF intent = "multi_step":
-    Orchestrator decomposes → parallel agent calls → merge results
+# Types: feat, fix, docs, style, refactor, test, chore, perf
+# Breaking changes: feat(api)!: or add BREAKING CHANGE footer
 ```
 
-### Error Handling & Fallbacks
-```
-Agent Failure → Retry (3x) → Fallback to General LLM → Log + Alert
-Low Confidence (<60%) → Add disclaimer + suggest human review
-Hallucination Detection → Citation check → Block if no source found
-Rate Limit Hit → Queue with BullMQ → Background processing
+**Branch Naming:**
+```bash
+feature/COLS-123-case-management
+bugfix/COLS-201-auth-token-expiry
+hotfix/COLS-301-critical-data-leak
 ```
 
 ---
 
-## 7. LLM Model Strategy
+## 6. Testing Requirements
 
-| Use Case | Model | Reason |
-|----------|-------|--------|
-| General Legal Chat | claude-3-5-sonnet | Best Arabic + reasoning |
-| Document Analysis | gpt-4o | Strong structured output |
-| Fast Responses | claude-3-haiku | Low latency, lower cost |
-| Embeddings (Arabic) | multilingual-e5-large | Best Arabic semantic |
-| Embeddings (English) | text-embedding-3-large | Best English |
-| Reranking | cross-encoder/ms-marco | Precision improvement |
+### Unit Tests (Jest)
+```typescript
+describe('CaseService', () => {
+  let service: CaseService;
+  let mockRepo: jest.Mocked<CaseRepository>;
 
-### Cost Optimization
+  beforeEach(async () => {
+    const module = await Test.createTestingModule({
+      providers: [
+        CaseService,
+        { provide: CaseRepository, useValue: createMock<CaseRepository>() }
+      ]
+    }).compile();
+    service = module.get<CaseService>(CaseService);
+  });
+
+  it('should create case with correct tenantId', async () => {
+    const dto: CreateCaseDto = { title: 'Test', type: CaseType.CIVIL };
+    mockRepo.create.mockResolvedValue({ id: 'case-1', ...dto });
+    
+    const result = await service.create(dto, { tenantId: 'tenant-1' });
+    
+    expect(mockRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1' })
+    );
+  });
+});
 ```
-Caching Strategy:
-- Exact same query → Redis cache (1 hour)
-- Similar documents → embedding cache (permanent)
-- Common legal Q&A → pre-computed answers cache
 
-Routing Strategy:
-- Simple queries → claude-3-haiku ($0.25/1M)
-- Complex analysis → claude-3-5-sonnet ($3/1M)
-- Batch processing → off-peak + queue
+### Coverage Targets
+- Services: >80% coverage
+- Overall: >60% coverage
+
+---
+
+## 7. AI Response Guidelines
+
+When generating AI responses:
+1. **NEVER give legal advice without citing sources**
+2. **Always add disclaimer**: "هذا للمساعدة البحثية فقط، راجع محامياً مختصاً"
+3. **Cite exact document name and section** for every legal claim
+4. **Prefer Arabic** unless user writes in English
+5. **Confidence thresholds**: >85% direct answer, 60-85% with caveats, <60% suggest specialist
+
+---
+
+## 8. Key Files Reference
+
 ```
+src/
+├── modules/
+│   ├── auth/           # JWT, RBAC, tenant guards
+│   ├── case/           # Case management CRUD
+│   ├── document/       # Upload, processing, RAG
+│   ├── ai/             # Orchestrator, agents
+│   └── billing/        # Invoices, time tracking
+├── common/
+│   ├── decorators/     # @Roles, @TenantId, @Throttle
+│   ├── guards/         # AuthGuard, TenantGuard
+│   └── filters/       # Exception filters
+└── prisma/
+    └── schema.prisma   # Database schema
+```
+
+**See Also:**
+- `docs/prd.md` - Product Requirements Document
+- `docs/dev-workflow.md` - Full development workflow & CI/CD
+- `docs/features-implementation-plan.md` - Technical architecture
+- `docs/claude.md` - Phase-by-phase execution guide
+
+---
+
+## 9. Documentation Maintenance
+
+**IMPORTANT**: After major changes, update the `@docs/` folder to reflect the current project state:
+
+| File | When to Update |
+|------|----------------|
+| `prd.md` | New features, scope changes, MVP completion |
+| `dev-workflow.md` | CI/CD changes, testing strategy updates |
+| `features-implementation-plan.md` | Architecture decisions, new modules |
+| `claude.md` | Phase completions, new constraints |
+| `AGENTS.md` | Build commands, coding standards changes |
+
+Keep these docs in sync with the codebase - stale documentation causes confusion for new team members and AI agents working in the repository.
